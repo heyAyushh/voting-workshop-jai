@@ -20,25 +20,15 @@ describe("Voting", () => {
     );
   });
 
-  it("fails to initialize a poll with past poll_end", async () => {
-    const pastPollEnd = new anchor.BN(Math.floor(Date.now() / 1000) - 10); // 10 seconds in the past
-
-    await expect(votingProgram.methods.initializePoll(
-      new anchor.BN(1),
-      "Invalid Poll",
-      new anchor.BN(Math.floor(Date.now() / 1000)), // Current timestamp
-      pastPollEnd, // Invalid poll_end
-    ).rpc()).rejects.toThrow("Poll end time must be in the future");
-  });
-
-  it("initializes a poll with valid future poll_end", async () => {
-    const futurePollEnd = new anchor.BN(Math.floor(Date.now() / 1000) + 1000); // 1000 seconds in the future
+  it("initializes a poll with valid poll_end", async () => {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current UNIX timestamp
+    const futurePollEnd = new anchor.BN(currentTime + 3600); // 1 hour in the future
 
     await votingProgram.methods.initializePoll(
       new anchor.BN(1),
       "What is your favorite color?",
-      new anchor.BN(Math.floor(Date.now() / 1000)), // Current timestamp
-      futurePollEnd, // Valid future poll_end
+      new anchor.BN(currentTime),
+      futurePollEnd,
     ).rpc();
 
     const [pollAddress] = PublicKey.findProgramAddressSync(
@@ -52,7 +42,25 @@ describe("Voting", () => {
 
     expect(poll.pollId.toNumber()).toBe(1);
     expect(poll.description).toBe("What is your favorite color?");
-    expect(poll.pollStart.toNumber()).toBeGreaterThan(0);
-    expect(poll.pollEnd.toNumber()).toBeGreaterThan(poll.pollStart.toNumber()); // Ensure poll_end is in future
+    expect(poll.pollStart.toNumber()).toBe(currentTime);
+    expect(poll.pollEnd.toNumber()).toBeGreaterThan(currentTime); // ✅ Validation
+  });
+
+  it("fails to initialize a poll with past poll_end", async () => {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current UNIX timestamp
+    const pastPollEnd = new anchor.BN(currentTime - 3600); // 1 hour in the past
+
+    try {
+      await votingProgram.methods.initializePoll(
+        new anchor.BN(2),
+        "What is your favorite sport?",
+        new anchor.BN(currentTime),
+        pastPollEnd,
+      ).rpc();
+      throw new Error("Test failed: Poll should not be initialized with past poll_end");
+    } catch (err) {
+      console.log("Expected error:", err.message);
+      expect(err.message).toContain("Poll end time must be in the future");
+    }
   });
 });
