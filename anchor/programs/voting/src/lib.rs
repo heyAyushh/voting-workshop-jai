@@ -13,7 +13,6 @@ pub mod voting {
                             description: String,
                             poll_start: u64,
                             poll_end: u64) -> Result<()> {
-
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
         poll.description = description;
@@ -34,14 +33,17 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        let voter_record = &mut ctx.accounts.voter_record;
+        require!(voter_record.voted == false, VotingError::AlreadyVoted);
+
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
+        voter_record.voted = true;
 
         msg!("Voted for candidate: {}", candidate.candidate_name);
         msg!("Votes: {}", candidate.candidate_votes);
         Ok(())
     }
-
 }
 
 #[derive(Accounts)]
@@ -53,7 +55,7 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -63,9 +65,17 @@ pub struct Vote<'info> {
     )]
     pub candidate: Account<'info, Candidate>,
 
+    #[account(
+      init_if_needed,
+      payer = signer,
+      space = 8 + VoterRecord::INIT_SPACE,
+      seeds = [poll_id.to_le_bytes().as_ref(), signer.key().as_ref()],
+      bump
+    )]
+    pub voter_record: Account<'info, VoterRecord>,
+    
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(candidate_name: String, poll_id: u64)]
@@ -77,7 +87,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -124,4 +134,15 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
+}
+
+#[account]
+pub struct VoterRecord {
+    pub voted: bool,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("You have already voted in this poll.")]
+    AlreadyVoted,
 }
