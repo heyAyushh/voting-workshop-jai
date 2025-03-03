@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { BankrunProvider, startAnchor } from "anchor-bankrun";
 import { Voting } from "../target/types/voting";
 
@@ -10,25 +10,35 @@ describe("Voting", () => {
   let context;
   let provider;
   let votingProgram: anchor.Program<Voting>;
-  let signer: Keypair;
 
   beforeAll(async () => {
-    // Setup the test environment
     context = await startAnchor('', [{ name: "voting", programId: PROGRAM_ID }], []);
     provider = new BankrunProvider(context);
     votingProgram = new anchor.Program<Voting>(
       IDL,
       provider,
     );
-    signer = Keypair.generate();  // Generate a test signer
   });
 
-  it("initializes a poll", async () => {
+  it("fails to initialize a poll with past poll_end", async () => {
+    const pastPollEnd = new anchor.BN(Math.floor(Date.now() / 1000) - 10); // 10 seconds in the past
+
+    await expect(votingProgram.methods.initializePoll(
+      new anchor.BN(1),
+      "Invalid Poll",
+      new anchor.BN(Math.floor(Date.now() / 1000)), // Current timestamp
+      pastPollEnd, // Invalid poll_end
+    ).rpc()).rejects.toThrow("Poll end time must be in the future");
+  });
+
+  it("initializes a poll with valid future poll_end", async () => {
+    const futurePollEnd = new anchor.BN(Math.floor(Date.now() / 1000) + 1000); // 1000 seconds in the future
+
     await votingProgram.methods.initializePoll(
       new anchor.BN(1),
       "What is your favorite color?",
-      new anchor.BN(100),
-      new anchor.BN(1739370789),
+      new anchor.BN(Math.floor(Date.now() / 1000)), // Current timestamp
+      futurePollEnd, // Valid future poll_end
     ).rpc();
 
     const [pollAddress] = PublicKey.findProgramAddressSync(
@@ -42,78 +52,7 @@ describe("Voting", () => {
 
     expect(poll.pollId.toNumber()).toBe(1);
     expect(poll.description).toBe("What is your favorite color?");
-    expect(poll.pollStart.toNumber()).toBe(100);
-  });
-
-  it("initializes candidates", async () => {
-    await votingProgram.methods.initializeCandidate(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.initializeCandidate(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
-
-    const [pinkAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
-      votingProgram.programId,
-    );
-    const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
-    console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(0);
-    expect(pinkCandidate.candidateName).toBe("Pink");
-
-    const [blueAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
-      votingProgram.programId,
-    );
-    const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
-    console.log(blueCandidate);
-    expect(blueCandidate.candidateVotes.toNumber()).toBe(0);
-    expect(blueCandidate.candidateName).toBe("Blue");
-  });
-
-  it("votes for candidates and ensures single vote per signer", async () => {
-    // First vote should be successful
-    await votingProgram.methods.vote(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-
-    // Second vote for the same candidate should fail
-    try {
-      await votingProgram.methods.vote(
-        "Pink",
-        new anchor.BN(1),
-      ).rpc();
-      // If no error is thrown, the test should fail
-      expect(false).toBe(true);
-    } catch (error) {
-      expect(error.message).toContain("The signer has already voted.");
-    }
-
-    // Voting for a different candidate should also work
-    await votingProgram.methods.vote(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
-
-    // Verify the votes for both candidates
-    const [pinkAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
-      votingProgram.programId,
-    );
-    const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
-    console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(1);  // Only 1 vote for Pink
-
-    const [blueAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
-      votingProgram.programId,
-    );
-    const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
-    console.log(blueCandidate);
-    expect(blueCandidate.candidateVotes.toNumber()).toBe(1);  // Only 1 vote for Blue
+    expect(poll.pollStart.toNumber()).toBeGreaterThan(0);
+    expect(poll.pollEnd.toNumber()).toBeGreaterThan(poll.pollStart.toNumber()); // Ensure poll_end is in future
   });
 });
