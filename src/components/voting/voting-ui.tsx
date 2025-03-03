@@ -2,8 +2,8 @@
 
 import { Keypair, PublicKey } from '@solana/web3.js'
 import { useMemo } from 'react'
-import { ellipsify } from '../ui/ui-layout'
 import { ExplorerLink } from '../cluster/cluster-ui'
+import { ellipsify } from '../ui/ui-layout'
 import { useVotingProgram, useVotingProgramAccount } from './voting-data-access'
 
 export function VotingCreate() {
@@ -54,11 +54,24 @@ export function VotingList() {
 }
 
 function VotingCard({ account }: { account: PublicKey }) {
-  const { accountQuery, incrementMutation, setMutation, decrementMutation, closeMutation } = useVotingProgramAccount({
+  const { accountQuery, incrementMutation, setMutation, decrementMutation, closeMutation, voteMutation } = useVotingProgramAccount({
     account,
   })
 
   const count = useMemo(() => accountQuery.data?.count ?? 0, [accountQuery.data?.count])
+
+  const handleVote = async (candidateName: string) => {
+    try {
+      await voteMutation.mutateAsync({ candidateName, pollId: account.toString() })
+    } catch (error: any) {
+      if (error.message === 'You have already voted.') {
+        // Handle the already voted error
+        alert('You have already voted for this poll.')
+      } else {
+        alert('Failed to vote. Please try again later.')
+      }
+    }
+  }
 
   return accountQuery.isLoading ? (
     <span className="loading loading-spinner loading-lg"></span>
@@ -96,6 +109,20 @@ function VotingCard({ account }: { account: PublicKey }) {
               disabled={decrementMutation.isPending}
             >
               Decrement
+            </button>
+            <button
+              className="btn btn-xs lg:btn-md btn-outline"
+              onClick={() => handleVote('Pink')}  // Example candidate "Pink"
+              disabled={voteMutation.isPending}
+            >
+              Vote for Pink
+            </button>
+            <button
+              className="btn btn-xs lg:btn-md btn-outline"
+              onClick={() => handleVote('Blue')}  // Example candidate "Blue"
+              disabled={voteMutation.isPending}
+            >
+              Vote for Blue
             </button>
           </div>
           <div className="text-center space-y-4">
