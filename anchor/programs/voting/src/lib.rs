@@ -13,7 +13,6 @@ pub mod voting {
                             description: String,
                             poll_start: u64,
                             poll_end: u64) -> Result<()> {
-
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
         poll.description = description;
@@ -25,23 +24,43 @@ pub mod voting {
 
     pub fn initialize_candidate(ctx: Context<InitializeCandidate>, 
                                 candidate_name: String,
-                                _poll_id: u64
-                            ) -> Result<()> {
+                                _poll_id: u64) -> Result<()> {
+        let poll = &mut ctx.accounts.poll;
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_name = candidate_name;
         candidate.candidate_votes = 0;
+        
+        // Increment candidate count
+        poll.candidate_amount += 1;
         Ok(())
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        let poll = &ctx.accounts.poll;
         let candidate = &mut ctx.accounts.candidate;
-        candidate.candidate_votes += 1;
+        let voter = &mut ctx.accounts.voter;
+        let clock = Clock::get()?;
 
+        // Ensure the poll is active
+        require!(
+            clock.unix_timestamp as u64 >= poll.poll_start && clock.unix_timestamp as u64 <= poll.poll_end,
+            VotingError::PollNotActive
+        );
+        
+        // Ensure the voter hasn't already voted
+        require!(
+            voter.has_voted == false,
+            VotingError::AlreadyVoted
+        );
+        
+        // Record the vote
+        voter.has_voted = true;
+        candidate.candidate_votes += 1;
+        
         msg!("Voted for candidate: {}", candidate.candidate_name);
         msg!("Votes: {}", candidate.candidate_votes);
         Ok(())
     }
-
 }
 
 #[derive(Accounts)]
@@ -53,7 +72,7 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -63,9 +82,17 @@ pub struct Vote<'info> {
     )]
     pub candidate: Account<'info, Candidate>,
 
+    #[account(
+      init_if_needed,
+      payer = signer,
+      space = 8 + 1, // Only storing one bool field
+      seeds = [signer.key().as_ref(), poll_id.to_le_bytes().as_ref()],
+      bump
+    )]
+    pub voter: Account<'info, Voter>,
+
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(candidate_name: String, poll_id: u64)]
@@ -77,7 +104,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -124,4 +151,18 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
+}
+
+#[account]
+pub struct Voter {
+    pub has_voted: bool,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Poll is not active for voting.")]
+    PollNotActive,
+    
+    #[msg("You have already voted in this poll.")]
+    AlreadyVoted,
 }
