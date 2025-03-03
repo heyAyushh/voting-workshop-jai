@@ -34,6 +34,21 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        let vote_record = &mut ctx.accounts.vote_record;
+        
+        // Check if the voter has already voted
+        require!(!vote_record.has_voted, CustomError::AlreadyVoted);
+
+        // Initialize the vote record if it's new
+        if vote_record.voter == Pubkey::default() {
+            vote_record.voter = ctx.accounts.signer.key();
+            vote_record.poll_id = _poll_id;
+        }
+
+        // Mark that the voter has voted
+        vote_record.has_voted = true;
+
+        // Increment the candidate's vote count
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
 
@@ -53,15 +68,24 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
-      mut,
-      seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
-      bump
+        mut,
+        seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
+        bump
     )]
     pub candidate: Account<'info, Candidate>,
+
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = 8 + VoteRecord::INIT_SPACE,
+        seeds = [b"vote_record", poll_id.to_le_bytes().as_ref(), signer.key().as_ref()],
+        bump
+    )]
+    pub vote_record: Account<'info, VoteRecord>,
 
     pub system_program: Program<'info, System>,
 }
@@ -124,4 +148,18 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct VoteRecord {
+    pub voter: Pubkey,
+    pub poll_id: u64,
+    pub has_voted: bool,
+}
+
+#[error_code]
+pub enum CustomError {
+    #[msg("Voter has already cast a vote in this poll")]
+    AlreadyVoted,
 }

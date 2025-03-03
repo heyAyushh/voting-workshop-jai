@@ -1,8 +1,9 @@
 'use client'
 
-import { Keypair, PublicKey } from '@solana/web3.js'
-import { useMemo } from 'react'
-import { ellipsify } from '../ui/ui-layout'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey } from '@solana/web3.js'
+import { WalletButton } from '../solana/solana-provider'
+import { AppHero, ellipsify } from '../ui/ui-layout'
 import { ExplorerLink } from '../cluster/cluster-ui'
 import { useVotingProgram, useVotingProgramAccount } from './voting-data-access'
 
@@ -12,10 +13,10 @@ export function VotingCreate() {
   return (
     <button
       className="btn btn-xs lg:btn-md btn-primary"
-      onClick={() => initialize.mutateAsync(Keypair.generate())}
+      onClick={() => initialize.mutateAsync()}
       disabled={initialize.isPending}
     >
-      Create {initialize.isPending && '...'}
+      Create Poll {initialize.isPending && '...'}
     </button>
   )
 }
@@ -40,82 +41,37 @@ export function VotingList() {
       ) : accounts.data?.length ? (
         <div className="grid md:grid-cols-2 gap-4">
           {accounts.data?.map((account) => (
-            <VotingCard key={account.publicKey.toString()} account={account.publicKey} />
+            <PollCard key={account.publicKey.toString()} account={account.publicKey} />
           ))}
         </div>
       ) : (
         <div className="text-center">
-          <h2 className={'text-2xl'}>No accounts</h2>
-          No accounts found. Create one above to get started.
+          <h2 className={'text-2xl'}>No polls</h2>
+          No polls found. Create one above to get started.
         </div>
       )}
     </div>
   )
 }
 
-function VotingCard({ account }: { account: PublicKey }) {
-  const { accountQuery, incrementMutation, setMutation, decrementMutation, closeMutation } = useVotingProgramAccount({
-    account,
-  })
+function PollCard({ account }: { account: PublicKey }) {
+  const { accountQuery } = useVotingProgramAccount({ account })
 
-  const count = useMemo(() => accountQuery.data?.count ?? 0, [accountQuery.data?.count])
+  if (accountQuery.isLoading) {
+    return <span className="loading loading-spinner loading-lg"></span>
+  }
 
-  return accountQuery.isLoading ? (
-    <span className="loading loading-spinner loading-lg"></span>
-  ) : (
-    <div className="card card-bordered border-base-300 border-4 text-neutral-content">
-      <div className="card-body items-center text-center">
-        <div className="space-y-6">
-          <h2 className="card-title justify-center text-3xl cursor-pointer" onClick={() => accountQuery.refetch()}>
-            {count}
-          </h2>
-          <div className="card-actions justify-around">
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => incrementMutation.mutateAsync()}
-              disabled={incrementMutation.isPending}
-            >
-              Increment
-            </button>
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => {
-                const value = window.prompt('Set value to:', count.toString() ?? '0')
-                if (!value || parseInt(value) === count || isNaN(parseInt(value))) {
-                  return
-                }
-                return setMutation.mutateAsync(parseInt(value))
-              }}
-              disabled={setMutation.isPending}
-            >
-              Set
-            </button>
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => decrementMutation.mutateAsync()}
-              disabled={decrementMutation.isPending}
-            >
-              Decrement
-            </button>
-          </div>
-          <div className="text-center space-y-4">
-            <p>
-              <ExplorerLink path={`account/${account}`} label={ellipsify(account.toString())} />
-            </p>
-            <button
-              className="btn btn-xs btn-secondary btn-outline"
-              onClick={() => {
-                if (!window.confirm('Are you sure you want to close this account?')) {
-                  return
-                }
-                return closeMutation.mutateAsync()
-              }}
-              disabled={closeMutation.isPending}
-            >
-              Close
-            </button>
-          </div>
-        </div>
+  const poll = accountQuery.data
+  if (!poll) return null
+
+  return (
+    <div className="card card-bordered border-base-300 border-4">
+      <div className="card-body">
+        <h2 className="card-title">{poll.description}</h2>
+        <p>Poll ID: {poll.pollId.toString()}</p>
+        <p>Start: {new Date(poll.pollStart.toNumber() * 1000).toLocaleString()}</p>
+        <p>End: {new Date(poll.pollEnd.toNumber() * 1000).toLocaleString()}</p>
+        <p>Number of Candidates: {poll.candidateAmount.toString()}</p>
       </div>
     </div>
   )

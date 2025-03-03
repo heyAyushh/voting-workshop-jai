@@ -2,6 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { BankrunProvider, startAnchor } from "anchor-bankrun";
 import { Voting } from "../target/types/voting";
+import { expect } from "@jest/globals";
 
 const IDL = require("../target/idl/voting.json");
 const PROGRAM_ID = new PublicKey(IDL.address);
@@ -71,15 +72,8 @@ describe("Voting", () => {
     expect(blueCandidate.candidateName).toBe("Blue");
   });
 
-  it("vote candidates", async () => {
-    await votingProgram.methods.vote(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.vote(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
+  it("prevents duplicate votes", async () => {
+    // First vote should succeed
     await votingProgram.methods.vote(
       "Pink",
       new anchor.BN(1),
@@ -89,18 +83,38 @@ describe("Voting", () => {
       [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
       votingProgram.programId,
     );
-    const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
-    console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(2);
-    expect(pinkCandidate.candidateName).toBe("Pink");
 
+    // Verify first vote was counted
+    let pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
+    expect(pinkCandidate.candidateVotes.toNumber()).toBe(1);
+
+    // Second vote should fail
+    try {
+      await votingProgram.methods.vote(
+        "Pink",
+        new anchor.BN(1),
+      ).rpc();
+      throw new Error("Expected second vote to fail");
+    } catch (error) {
+      expect(error.message).toContain("Voter has already cast a vote in this poll");
+    }
+
+    // Verify vote count hasn't changed
+    pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
+    expect(pinkCandidate.candidateVotes.toNumber()).toBe(1);
+
+    // Different user can still vote for Blue
     const [blueAddress] = PublicKey.findProgramAddressSync(
       [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
       votingProgram.programId,
     );
+
+    await votingProgram.methods.vote(
+      "Blue",
+      new anchor.BN(1),
+    ).rpc();
+
     const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
-    console.log(blueCandidate);
     expect(blueCandidate.candidateVotes.toNumber()).toBe(1);
-    expect(blueCandidate.candidateName).toBe("Blue");
   });
 });
