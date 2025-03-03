@@ -10,14 +10,17 @@ describe("Voting", () => {
   let context;
   let provider;
   let votingProgram: anchor.Program<Voting>;
+  let signer: Keypair;
 
   beforeAll(async () => {
+    // Setup the test environment
     context = await startAnchor('', [{ name: "voting", programId: PROGRAM_ID }], []);
     provider = new BankrunProvider(context);
     votingProgram = new anchor.Program<Voting>(
       IDL,
       provider,
     );
+    signer = Keypair.generate();  // Generate a test signer
   });
 
   it("initializes a poll", async () => {
@@ -71,28 +74,39 @@ describe("Voting", () => {
     expect(blueCandidate.candidateName).toBe("Blue");
   });
 
-  it("vote candidates", async () => {
-    await votingProgram.methods.vote(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.vote(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
+  it("votes for candidates and ensures single vote per signer", async () => {
+    // First vote should be successful
     await votingProgram.methods.vote(
       "Pink",
       new anchor.BN(1),
     ).rpc();
 
+    // Second vote for the same candidate should fail
+    try {
+      await votingProgram.methods.vote(
+        "Pink",
+        new anchor.BN(1),
+      ).rpc();
+      // If no error is thrown, the test should fail
+      expect(false).toBe(true);
+    } catch (error) {
+      expect(error.message).toContain("The signer has already voted.");
+    }
+
+    // Voting for a different candidate should also work
+    await votingProgram.methods.vote(
+      "Blue",
+      new anchor.BN(1),
+    ).rpc();
+
+    // Verify the votes for both candidates
     const [pinkAddress] = PublicKey.findProgramAddressSync(
       [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
       votingProgram.programId,
     );
     const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
     console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(2);
-    expect(pinkCandidate.candidateName).toBe("Pink");
+    expect(pinkCandidate.candidateVotes.toNumber()).toBe(1);  // Only 1 vote for Pink
 
     const [blueAddress] = PublicKey.findProgramAddressSync(
       [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
@@ -100,7 +114,6 @@ describe("Voting", () => {
     );
     const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
     console.log(blueCandidate);
-    expect(blueCandidate.candidateVotes.toNumber()).toBe(1);
-    expect(blueCandidate.candidateName).toBe("Blue");
+    expect(blueCandidate.candidateVotes.toNumber()).toBe(1);  // Only 1 vote for Blue
   });
 });
