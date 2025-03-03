@@ -8,28 +8,25 @@ declare_id!("coUnmi3oBUtwtd9fjeAvSsJssXh5A5xyPbhpewyzRVF");
 pub mod voting {
     use super::*;
 
-    pub fn initialize_poll(
-        ctx: Context<InitializePoll>, 
-        poll_id: u64,
-        description: String,
-        poll_start: u64,
-        poll_end: u64,
-    ) -> Result<()> {
+    pub fn initialize_poll(ctx: Context<InitializePoll>, 
+                            poll_id: u64,
+                            description: String,
+                            poll_start: u64,
+                            poll_end: u64) -> Result<()> {
+
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
         poll.description = description;
         poll.poll_start = poll_start;
         poll.poll_end = poll_end;
         poll.candidate_amount = 0;
-        poll.voted_signers_count = 0; // Initialize voted signers count
         Ok(())
     }
 
-    pub fn initialize_candidate(
-        ctx: Context<InitializeCandidate>, 
-        candidate_name: String,
-        _poll_id: u64,
-    ) -> Result<()> {
+    pub fn initialize_candidate(ctx: Context<InitializeCandidate>, 
+                                candidate_name: String,
+                                _poll_id: u64
+                            ) -> Result<()> {
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_name = candidate_name;
         candidate.candidate_votes = 0;
@@ -37,19 +34,18 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
-        let poll = &mut ctx.accounts.poll;
-        let signer = &ctx.accounts.signer;
+        let poll = &ctx.accounts.poll;
+        let candidate = &mut ctx.accounts.candidate;
+        let clock = Clock::get()?.unix_timestamp as u64; // Get the current timestamp
 
-        // Ensure the signer has not voted for this poll
-        if poll.voted_signers_count > 0 {
-            return Err(error!(VotingError::SignerAlreadyVoted));
+        // Ensure voting happens only within the valid poll period
+        if clock < poll.poll_start {
+            return Err(ErrorCode::PollNotStarted.into());
+        }
+        if clock > poll.poll_end {
+            return Err(ErrorCode::PollEnded.into());
         }
 
-        // Mark the signer as having voted
-        poll.voted_signers_count += 1;
-
-        // Vote for the candidate
-        let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
 
         msg!("Voted for candidate: {}", candidate.candidate_name);
@@ -67,13 +63,13 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-    )]
+      )]
     pub poll: Account<'info, Poll>,
 
     #[account(
-        mut,
-        seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
-        bump
+      mut,
+      seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
+      bump
     )]
     pub candidate: Account<'info, Candidate>,
 
@@ -90,17 +86,18 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-    )]
+      )]
     pub poll: Account<'info, Poll>,
 
     #[account(
-        init,
-        payer = signer,
-        space = 8 + Candidate::INIT_SPACE,
-        seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
-        bump
+      init,
+      payer = signer,
+      space = 8 + Candidate::INIT_SPACE,
+      seeds = [poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()],
+      bump
     )]
     pub candidate: Account<'info, Candidate>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -117,14 +114,16 @@ pub struct Candidate {
 pub struct InitializePoll<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
+
     #[account(
-        init,
-        payer = signer,
-        space = 8 + Poll::INIT_SPACE,
-        seeds = [poll_id.to_le_bytes().as_ref()],
-        bump
+      init,
+      payer = signer,
+      space = 8 + Poll::INIT_SPACE,
+      seeds = [poll_id.to_le_bytes().as_ref()],
+      bump
     )]
     pub poll: Account<'info, Poll>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -137,11 +136,13 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
-    pub voted_signers_count: u64,  // Track the number of signers who have voted
 }
 
-#[error]
-pub enum VotingError {
-    #[msg("Signer has already voted")]
-    SignerAlreadyVoted,
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Voting is not allowed before the poll starts.")]
+    PollNotStarted,
+    
+    #[msg("Voting is not allowed after the poll has ended.")]
+    PollEnded,
 }
