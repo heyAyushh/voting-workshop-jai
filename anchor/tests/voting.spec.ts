@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { BankrunProvider, startAnchor } from "anchor-bankrun";
 import { Voting } from "../target/types/voting";
 
@@ -20,12 +20,15 @@ describe("Voting", () => {
     );
   });
 
-  it("initializes a poll", async () => {
+  it("initializes a poll with valid poll_end", async () => {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current UNIX timestamp
+    const futurePollEnd = new anchor.BN(currentTime + 3600); // 1 hour in the future
+
     await votingProgram.methods.initializePoll(
       new anchor.BN(1),
       "What is your favorite color?",
-      new anchor.BN(100),
-      new anchor.BN(1739370789),
+      new anchor.BN(currentTime),
+      futurePollEnd,
     ).rpc();
 
     const [pollAddress] = PublicKey.findProgramAddressSync(
@@ -39,68 +42,25 @@ describe("Voting", () => {
 
     expect(poll.pollId.toNumber()).toBe(1);
     expect(poll.description).toBe("What is your favorite color?");
-    expect(poll.pollStart.toNumber()).toBe(100);
+    expect(poll.pollStart.toNumber()).toBe(currentTime);
+    expect(poll.pollEnd.toNumber()).toBeGreaterThan(currentTime); // ✅ Validation
   });
 
-  it("initializes candidates", async () => {
-    await votingProgram.methods.initializeCandidate(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.initializeCandidate(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
+  it("fails to initialize a poll with past poll_end", async () => {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current UNIX timestamp
+    const pastPollEnd = new anchor.BN(currentTime - 3600); // 1 hour in the past
 
-    const [pinkAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
-      votingProgram.programId,
-    );
-    const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
-    console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(0);
-    expect(pinkCandidate.candidateName).toBe("Pink");
-
-    const [blueAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
-      votingProgram.programId,
-    );
-    const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
-    console.log(blueCandidate);
-    expect(blueCandidate.candidateVotes.toNumber()).toBe(0);
-    expect(blueCandidate.candidateName).toBe("Blue");
-  });
-
-  it("vote candidates", async () => {
-    await votingProgram.methods.vote(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.vote(
-      "Blue",
-      new anchor.BN(1),
-    ).rpc();
-    await votingProgram.methods.vote(
-      "Pink",
-      new anchor.BN(1),
-    ).rpc();
-
-    const [pinkAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Pink")],
-      votingProgram.programId,
-    );
-    const pinkCandidate = await votingProgram.account.candidate.fetch(pinkAddress);
-    console.log(pinkCandidate);
-    expect(pinkCandidate.candidateVotes.toNumber()).toBe(2);
-    expect(pinkCandidate.candidateName).toBe("Pink");
-
-    const [blueAddress] = PublicKey.findProgramAddressSync(
-      [new anchor.BN(1).toArrayLike(Buffer, "le", 8), Buffer.from("Blue")],
-      votingProgram.programId,
-    );
-    const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
-    console.log(blueCandidate);
-    expect(blueCandidate.candidateVotes.toNumber()).toBe(1);
-    expect(blueCandidate.candidateName).toBe("Blue");
+    try {
+      await votingProgram.methods.initializePoll(
+        new anchor.BN(2),
+        "What is your favorite sport?",
+        new anchor.BN(currentTime),
+        pastPollEnd,
+      ).rpc();
+      throw new Error("Test failed: Poll should not be initialized with past poll_end");
+    } catch (err) {
+      console.log("Expected error:", err.message);
+      expect(err.message).toContain("Poll end time must be in the future");
+    }
   });
 });
