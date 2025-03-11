@@ -25,11 +25,19 @@ pub mod voting {
 
     pub fn initialize_candidate(ctx: Context<InitializeCandidate>, 
                                 candidate_name: String,
-                                _poll_id: u64
-                            ) -> Result<()> {
+                                _poll_id: u64) -> Result<()> {
         let candidate = &mut ctx.accounts.candidate;
+        let poll = &mut ctx.accounts.poll;
+
         candidate.candidate_name = candidate_name;
         candidate.candidate_votes = 0;
+
+        // Increment the candidate count in the poll account
+        poll.candidate_amount += 1;
+
+        msg!("Candidate '{}' added to poll ID {}.", candidate.candidate_name, poll.poll_id);
+        msg!("Total candidates: {}", poll.candidate_amount);
+        
         Ok(())
     }
 
@@ -41,7 +49,6 @@ pub mod voting {
         msg!("Votes: {}", candidate.candidate_votes);
         Ok(())
     }
-
 }
 
 #[derive(Accounts)]
@@ -65,7 +72,6 @@ pub struct Vote<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(candidate_name: String, poll_id: u64)]
