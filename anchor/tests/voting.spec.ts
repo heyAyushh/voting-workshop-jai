@@ -166,4 +166,58 @@ describe("Voting", () => {
     const blueCandidate = await votingProgram.account.candidate.fetch(blueAddress);
     expect(blueCandidate.candidateVotes.toNumber()).toBe(1);
   });
+
+
+  it("fails when voting before poll starts", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await votingProgram.methods.initializePoll(
+      new anchor.BN(2),
+      "Early voting test",
+      new anchor.BN(now + 1000),
+      new anchor.BN(now + 2000),
+    ).rpc();
+
+    await votingProgram.methods.initializeCandidate(
+      "Test",
+      new anchor.BN(2),
+    ).rpc();
+
+    try {
+      await votingProgram.methods.vote(
+        "Test",
+        new anchor.BN(2),
+      ).rpc();
+      throw new Error("should have failed");
+    } catch (err) {
+      expect(err.toString()).toContain("Poll has not started yet");
+    }
+  });
+
+  it("fails when voting after poll ends", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await votingProgram.methods.initializePoll(
+      new anchor.BN(3),
+      "Late voting test",
+      new anchor.BN(now - 2000),
+      new anchor.BN(now - 1000),
+    ).rpc();
+
+    await votingProgram.methods.initializeCandidate(
+      "Test",
+      new anchor.BN(3),
+    ).rpc();
+
+    try {
+      await votingProgram.methods.vote(
+        "Test",
+        new anchor.BN(3),
+      ).rpc();
+      throw new Error("should have failed");
+    } catch (err) {
+      expect(err.toString()).toContain("Poll has already ended");
+    }
+  });
 });
+
+});
+

@@ -76,7 +76,23 @@ pub mod voting {
 
         // Increment the candidate's vote count
         let candidate = &mut ctx.accounts.candidate;
+
+        let poll = &ctx.accounts.poll;
+        let clock = Clock::get()?;
+        let current_time = clock.unix_timestamp as u64;
+
+        require!(
+            current_time >= poll.poll_start,
+            VotingError::PollNotStarted
+        );
+        require!(
+            current_time <= poll.poll_end,
+            VotingError::PollEnded
+        );
+
+
         let poll = &mut ctx.accounts.poll;
+
         candidate.candidate_votes += 1;
         poll.total_votes += 1; // Increment total votes for the poll
 
@@ -191,4 +207,12 @@ pub struct VoteRecord {
 pub enum CustomError {
     #[msg("Voter has already cast a vote in this poll")]
     AlreadyVoted,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Poll has not started yet")]
+    PollNotStarted,
+    #[msg("Poll has already ended")]
+    PollEnded,
 }
