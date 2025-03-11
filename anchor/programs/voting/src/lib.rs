@@ -4,6 +4,15 @@ use anchor_lang::prelude::*;
 
 declare_id!("coUnmi3oBUtwtd9fjeAvSsJssXh5A5xyPbhpewyzRVF");
 
+// poll validation error 
+#[error_code]
+pub enum PollError {
+    #[msg("Poll end time must be in the future")]
+    InvalidPollEndTime,
+    #[msg("Invalid Unix timestamp")]
+    InvalidTimestamp,
+}
+
 #[program]
 pub mod voting {
     use super::*;
@@ -13,6 +22,15 @@ pub mod voting {
                             description: String,
                             poll_start: u64,
                             poll_end: u64) -> Result<()> {
+        //current time
+        let clock = Clock::get()?;
+        let current_time = clock.unix_timestamp as u64;
+
+        //validate timestamp
+        require!(poll_end > 0, PollError::InvalidTimestamp);
+
+        // poll end time validate
+        require!(poll_end > current_time, PollError::InvalidPollEndTime);
 
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
