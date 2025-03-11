@@ -20,6 +20,7 @@ pub mod voting {
         poll.poll_start = poll_start;
         poll.poll_end = poll_end;
         poll.candidate_amount = 0;
+        poll.total_votes = 0; // Initialize total votes
         Ok(())
     }
 
@@ -32,8 +33,7 @@ pub mod voting {
         candidate.candidate_name = candidate_name;
         candidate.candidate_votes = 0;
 
-        // Increment the candidate count in the poll account
-        poll.candidate_amount += 1;
+        poll.candidate_amount += 1; // Increment candidate count in poll
 
         msg!("Candidate '{}' added to poll ID {}.", candidate.candidate_name, poll.poll_id);
         msg!("Total candidates: {}", poll.candidate_amount);
@@ -43,10 +43,13 @@ pub mod voting {
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
         let candidate = &mut ctx.accounts.candidate;
+        let poll = &mut ctx.accounts.poll;
         candidate.candidate_votes += 1;
+        poll.total_votes += 1; // Increment total votes for the poll
 
         msg!("Voted for candidate: {}", candidate.candidate_name);
-        msg!("Votes: {}", candidate.candidate_votes);
+        msg!("Candidate Votes: {}", candidate.candidate_votes);
+        msg!("Total Votes in Poll: {}", poll.total_votes);
         Ok(())
     }
 }
@@ -58,9 +61,10 @@ pub struct Vote<'info> {
     pub signer: Signer<'info>,
 
     #[account(
+        mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -83,7 +87,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -130,4 +134,5 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
+    pub total_votes: u64, // Track total votes for the poll
 }
